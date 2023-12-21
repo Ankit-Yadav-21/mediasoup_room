@@ -41,20 +41,12 @@ const io = new Server(httpsServer)
 // socket.io namespace (could represent a room?)
 const connections = io.of('/mediasoup')
 
-/**
- * Worker
- * |-> Router(s)
- *     |-> Producer Transport(s)
- *         |-> Producer
- *     |-> Consumer Transport(s)
- *         |-> Consumer 
- **/
-let worker
-let rooms = {}          // { roomName1: { Router, rooms: [ sicketId1, ... ] }, ...}
-let peers = {}          // { socketId1: { roomName1, socket, transports = [id1, id2,] }, producers = [id1, id2,] }, consumers = [id1, id2,], peerDetails }, ...}
-let transports = []     // [ { socketId1, roomName1, transport, consumer }, ... ]
-let producers = []      // [ { socketId1, roomName1, producer, }, ... ]
-let consumers = []      // [ { socketId1, roomName1, consumer, }, ... ]
+let worker;
+let rooms = {};
+let peers = {};
+let transports = [];
+let producers = [];
+let consumers = [];
 
 const createWorker = async () => {
   worker = await mediasoup.createWorker({
@@ -65,7 +57,7 @@ const createWorker = async () => {
 
   worker.on('died', error => {
     // This implies something serious happened, so kill the application
-    console.error('mediasoup worker has died')
+    console.error('mediasoup worker has died', error)
     setTimeout(() => process.exit(1), 2000) // exit in 2 seconds
   })
 
@@ -75,10 +67,6 @@ const createWorker = async () => {
 // We create a Worker as soon as our application starts
 worker = createWorker()
 
-// This is an Array of RtpCapabilities
-// https://mediasoup.org/documentation/v3/mediasoup/rtp-parameters-and-capabilities/#RtpCodecCapability
-// list of media codecs supported by mediasoup ...
-// https://github.com/versatica/mediasoup/blob/v3/src/supportedRtpCapabilities.ts
 const mediaCodecs = [
   {
     kind: 'audio',
@@ -92,6 +80,17 @@ const mediaCodecs = [
     clockRate: 90000,
     parameters: {
       'x-google-start-bitrate': 1000,
+    },
+  },
+  {
+    kind: "video",
+    mimeType: "video/h264",
+    clockRate: 90000,
+    parameters: {
+      "packetization-mode": 1,
+      "profile-level-id": "42e01f",
+      "level-asymmetry-allowed": 1,
+      //'x-google-start-bitrate'  : 1000
     },
   },
 ]
@@ -131,19 +130,17 @@ connections.on('connection', async socket => {
   })
 
   socket.on('joinRoom', async ({ roomName }, callback) => {
-    // create Router if it does not exist
-    // const router1 = rooms[roomName] && rooms[roomName].get('data').router || await createRoom(roomName, socket.id)
     const router1 = await createRoom(roomName, socket.id)
 
     peers[socket.id] = {
       socket,
-      roomName,           // Name for the Router this Peer joined
+      roomName,
       transports: [],
       producers: [],
       consumers: [],
       peerDetails: {
         name: '',
-        isAdmin: false,   // Is this Peer the Admin?
+        isAdmin: false,
       }
     }
 
@@ -155,11 +152,6 @@ connections.on('connection', async socket => {
   })
 
   const createRoom = async (roomName, socketId) => {
-    // worker.createRouter(options)
-    // options = { mediaCodecs, appData }
-    // mediaCodecs -> defined above
-    // appData -> custom application data - we are not supplying any
-    // none of the two are required
     let router1
     let peers = []
     if (rooms[roomName]) {
@@ -178,36 +170,13 @@ connections.on('connection', async socket => {
 
     return router1
   }
-
-  // socket.on('createRoom', async (callback) => {
-  //   if (router === undefined) {
-  //     // worker.createRouter(options)
-  //     // options = { mediaCodecs, appData }
-  //     // mediaCodecs -> defined above
-  //     // appData -> custom application data - we are not supplying any
-  //     // none of the two are required
-  //     router = await worker.createRouter({ mediaCodecs, })
-  //     console.log(`Router ID: ${router.id}`)
-  //   }
-
-  //   getRtpCapabilities(callback)
-  // })
-
-  // const getRtpCapabilities = (callback) => {
-  //   const rtpCapabilities = router.rtpCapabilities
-
-  //   callback({ rtpCapabilities })
-  // }
-
-  // Client emits a request to create server side Transport
-  // We need to differentiate between the producer and consumer transports
+  
   socket.on('createWebRtcTransport', async ({ consumer }, callback) => {
     // get Room Name from Peer's properties
     const roomName = peers[socket.id].roomName
 
     // get Router (Room) object this peer is in based on RoomName
     const router = rooms[roomName].router
-
 
     createWebRtcTransport(router).then(
       transport => {
@@ -391,8 +360,6 @@ connections.on('connection', async socket => {
 
         addConsumer(consumer, roomName)
 
-        // from the consumer extract the following params
-        // to send back to the Client
         const params = {
           id: consumer.id,
           producerId: remoteProducerId,
@@ -424,12 +391,11 @@ connections.on('connection', async socket => {
 const createWebRtcTransport = async (router) => {
   return new Promise(async (resolve, reject) => {
     try {
-      // https://mediasoup.org/documentation/v3/mediasoup/api/#WebRtcTransportOptions
       const webRtcTransport_options = {
         listenIps: [
           {
             ip: '0.0.0.0', // replace with relevant IP address
-            announcedIp: '10.0.0.115',
+            announcedIp: '127.0.0.1',
           }
         ],
         enableUdp: true,
@@ -437,7 +403,6 @@ const createWebRtcTransport = async (router) => {
         preferUdp: true,
       }
 
-      // https://mediasoup.org/documentation/v3/mediasoup/api/#router-createWebRtcTransport
       let transport = await router.createWebRtcTransport(webRtcTransport_options)
       console.log(`transport id: ${transport.id}`)
 
