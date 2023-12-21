@@ -20,7 +20,7 @@ app.get('*', (req, res, next) => {
 
   if (req.path.indexOf(path) == 0 && req.path.length > path.length) return next()
 
-  res.send(`You need to specify a room name in the path e.g. 'https://127.0.0.1/sfu/room'`)
+  res.send(`You need to specify a room name in the path e.g. 'https://meetapi.cleverattiskills.com/sfu/room'`)
 })
 
 app.use('/sfu/:room', express.static(path.join(__dirname, 'public')))
@@ -32,8 +32,8 @@ const options = {
 }
 
 const httpsServer = https.createServer(options, app)
-httpsServer.listen(3000, () => {
-  console.log('listening on port: ' + 3000)
+httpsServer.listen(4000, () => {
+  console.log('listening on port: ' + 4000)
 })
 
 const io = new Server(httpsServer)
